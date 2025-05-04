@@ -1,7 +1,12 @@
 use core::{panic, str};
-use std::{io::Write, path::{self, Path, PathBuf}, sync::OnceLock};
+use std::{path::PathBuf, sync::OnceLock};
 
-use gmlparser::{StrRef, StringInterner};
+use gmlparser::{
+    FeatureMember, StrRef, StringInterner,
+    emitter::{
+        ChooseEmitter, FeatureMemberEmitter, multifile::MultiFileEmitter, null::NullEmitter,
+    },
+};
 use quick_xml::events::Event;
 
 fn main() {
@@ -9,6 +14,7 @@ fn main() {
     let file_path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "/Users/jelle/Downloads/addresses.gml".to_string());
+    let format = std::env::args().nth(2).unwrap_or_else(|| "tsv".to_string());
     let file = std::fs::File::open(&file_path).expect("Failed to open file");
     // Create a buffered reader
     let reader = std::io::BufReader::new(file);
@@ -16,11 +22,15 @@ fn main() {
 
     let mut buf = Vec::new();
 
-    // Create a TSV file emitter
-    let tsv_file_path = PathBuf::from(file_path);
-    let tsv_emitter = MultiFileEmitter::new(tsv_file_path.parent().unwrap());
+    let emitter: ChooseEmitter = if format == "tsv" {
+        // Create a TSV file emitter
+        let tsv_file_path = PathBuf::from(file_path);
+        MultiFileEmitter::new(tsv_file_path.parent().unwrap()).into()
+    } else {
+        NullEmitter::new().into()
+    };
 
-    let mut collector = AddressCollector::new(tsv_emitter);
+    let mut collector = AddressCollector::new(emitter);
 
     loop {
         match xml_reader
@@ -45,137 +55,6 @@ fn main() {
     }
 }
 
-trait FeatureMemberEmitter {
-    fn emit(&mut self, feature_member: FeatureMember);
-}
-
-struct MultiFileEmitter {
-    address_writer: std::io::BufWriter<std::fs::File>,
-    admin_unit_writer: std::io::BufWriter<std::fs::File>,
-    address_area_writer: std::io::BufWriter<std::fs::File>,
-    thoroughfare_writer: std::io::BufWriter<std::fs::File>,
-}
-
-impl MultiFileEmitter {
-    fn new(base_path: &Path) -> Self {
-        // Create separate files for each feature member type
-        let address_file = std::fs::File::create(base_path.join("addresses.tsv"))
-            .expect("Failed to create address file");
-        let admin_unit_file = std::fs::File::create(base_path.join("admin_units.tsv"))
-            .expect("Failed to create admin unit file");
-        let address_area_file = std::fs::File::create(base_path.join("address_areas.tsv"))
-            .expect("Failed to create address area file");
-        let thoroughfare_file = std::fs::File::create(base_path.join("thoroughfares.tsv"))
-            .expect("Failed to create thoroughfare file");
-
-        // Write headers to each file
-        let mut address_writer = std::io::BufWriter::new(address_file);
-        writeln!(
-            address_writer,
-            "local_id\tnumber\tnumber_extension\tnumber_2nd_extension\tpostal_delivery_identifier\tunit_level\tadmin_unit_ref\taddress_area_ref\tthoroughfare_ref"
-        ).expect("Failed to write address header");
-
-        let mut admin_unit_writer = std::io::BufWriter::new(admin_unit_file);
-        writeln!(
-            admin_unit_writer,
-            "local_id\tname"
-        ).expect("Failed to write admin unit header");
-
-        let mut address_area_writer = std::io::BufWriter::new(address_area_file);
-        writeln!(
-            address_area_writer,
-            "local_id\tname\tsituated_in_ref"
-        ).expect("Failed to write address area header");
-
-        let mut thoroughfare_writer = std::io::BufWriter::new(thoroughfare_file);
-        writeln!(
-            thoroughfare_writer,
-            "local_id\tname\tsituated_in_ref"
-        ).expect("Failed to write thoroughfare header");
-
-        MultiFileEmitter {
-            address_writer,
-            admin_unit_writer,
-            address_area_writer,
-            thoroughfare_writer,
-        }
-    }
-}
-
-impl FeatureMemberEmitter for MultiFileEmitter {
-    fn emit(&mut self, feature_member: FeatureMember) {
-        match feature_member {
-            FeatureMember::Address {
-                local_id,
-                number,
-                number_extension,
-                number_2nd_extension,
-                postal_delivery_identifier,
-                unit_level,
-                admin_unit_ref,
-                address_area_ref,
-                thoroughfare_ref,
-            } => {
-                // Write the address data to the address file
-                writeln!(
-                    self.address_writer,
-                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                    local_id,
-                    number.unwrap_or_default(),
-                    number_extension.unwrap_or_default(),
-                    number_2nd_extension.unwrap_or_default(),
-                    postal_delivery_identifier.unwrap_or_default(),
-                    unit_level.unwrap_or_default(),
-                    admin_unit_ref.unwrap_or_default(),
-                    address_area_ref.unwrap_or_default(),
-                    thoroughfare_ref.unwrap_or_default()
-                )
-                .expect("Failed to write to address file");
-            }
-            FeatureMember::AdminUnitName { local_id, name } => {
-                // Write the admin unit name data to the admin unit file
-                writeln!(
-                    self.admin_unit_writer,
-                    "{}\t{}",
-                    local_id,
-                    name.unwrap_or_default()
-                )
-                .expect("Failed to write to admin unit file");
-            }
-            FeatureMember::AddressAreaName {
-                local_id,
-                name,
-                situated_in_ref,
-            } => {
-                // Write the address area name data to the address area file
-                writeln!(
-                    self.address_area_writer,
-                    "{}\t{}\t{}",
-                    local_id,
-                    name.unwrap_or_default(),
-                    situated_in_ref.unwrap_or_default()
-                )
-                .expect("Failed to write to address area file");
-            }
-            FeatureMember::ThoroughfareName {
-                local_id,
-                name,
-                situated_in_ref,
-            } => {
-                // Write the thoroughfare name data to the thoroughfare file
-                writeln!(
-                    self.thoroughfare_writer,
-                    "{}\t{}\t{}",
-                    local_id,
-                    name.unwrap_or_default(),
-                    situated_in_ref.unwrap_or_default()
-                )
-                .expect("Failed to write to thoroughfare file");
-            }
-        }
-    }
-}
-
 type XmlPath = Vec<StrRef>;
 
 fn path_starts_with(path: &XmlPath, prefix: &XmlPath) -> bool {
@@ -196,37 +75,6 @@ fn path_ends_with(path: &XmlPath, suffix: &XmlPath) -> bool {
         .all(|(a, b)| a == b)
 }
 
-enum FeatureMember {
-    Address {
-        local_id: String,
-        number: Option<String>,
-        number_extension: Option<String>,
-        number_2nd_extension: Option<String>,
-        postal_delivery_identifier: Option<String>,
-        unit_level: Option<String>,
-        admin_unit_ref: Option<String>,
-        address_area_ref: Option<String>,
-        thoroughfare_ref: Option<String>,
-    },
-    // Country
-    AdminUnitName {
-        local_id: String,
-        name: Option<String>,
-    },
-    // City
-    AddressAreaName {
-        local_id: String,
-        name: Option<String>,
-        situated_in_ref: Option<String>,
-    },
-    // Street
-    ThoroughfareName {
-        local_id: String,
-        name: Option<String>,
-        situated_in_ref: Option<String>,
-    },
-}
-
 enum FeatureMemberBuilder {
     Address(AddressBuilder),
     AdminUnitName(AdminUnitNameBuilder),
@@ -234,21 +82,120 @@ enum FeatureMemberBuilder {
     ThoroughfareName(ThoroughfareNameBuilder),
 }
 
-struct AddressBuilder {}
-struct AdminUnitNameBuilder {}
-struct AddressAreaNameBuilder {}
-struct ThoroughfareNameBuilder {}
+struct AddressBuilder {
+    number: Option<String>,
+    number_extension: Option<String>,
+    number_2nd_extension: Option<String>,
+    postal_delivery_identifier: Option<String>,
+    admin_unit_ref: Option<String>,
+    address_area_ref: Option<String>,
+    thoroughfare_ref: Option<String>,
+    locator_designator_builder: Option<LocatorDesignatorBuilder>,
+}
+impl AddressBuilder {
+    fn set_designator(&mut self, designator: LocatorDesignator) {
+        match designator.type_ {
+            LocatorDesignatorType::Number => self.number = Some(designator.designator),
+            LocatorDesignatorType::NumberExtension => {
+                self.number_extension = Some(designator.designator)
+            }
+            LocatorDesignatorType::Number2ndExtension => {
+                self.number_2nd_extension = Some(designator.designator)
+            }
+            LocatorDesignatorType::PostalDeliveryIdentifier => {
+                self.postal_delivery_identifier = Some(designator.designator)
+            }
+        }
+    }
+}
+
+struct LocatorDesignatorBuilder {
+    type_: Option<LocatorDesignatorType>,
+    designator: Option<String>,
+}
+
+struct LocatorDesignator {
+    type_: LocatorDesignatorType,
+    designator: String,
+}
+
+impl LocatorDesignatorBuilder {
+    fn new_with_type(type_: LocatorDesignatorType) -> LocatorDesignatorBuilder {
+        LocatorDesignatorBuilder {
+            type_: Some(type_),
+            designator: None,
+        }
+    }
+    fn new_with_designator(designator: String) -> LocatorDesignatorBuilder {
+        LocatorDesignatorBuilder {
+            type_: None,
+            designator: Some(designator),
+        }
+    }
+
+    fn set_type(&mut self, type_: LocatorDesignatorType) -> Option<LocatorDesignator> {
+        if let Some(designator) = self.designator.take() {
+            return Some(LocatorDesignator { type_, designator });
+        }
+        self.type_ = Some(type_);
+        None
+    }
+
+    fn set_designator(&mut self, designator: String) -> Option<LocatorDesignator> {
+        if let Some(type_) = self.type_.take() {
+            return Some(LocatorDesignator { type_, designator });
+        }
+        self.designator = Some(designator);
+        None
+    }
+}
+
+enum LocatorDesignatorType {
+    Number,
+    NumberExtension,
+    Number2ndExtension,
+    PostalDeliveryIdentifier,
+}
+
+struct AdminUnitNameBuilder {
+    name: Option<String>,
+}
+
+struct AddressAreaNameBuilder {
+    name: Option<String>,
+    situated_in_ref: Option<String>,
+}
+
+struct ThoroughfareNameBuilder {
+    name: Option<String>,
+    situated_in_ref: Option<String>,
+}
 
 impl FeatureMemberBuilder {
     fn new_from_tag(tag: &str) -> Self {
         match tag {
-            "ad:Address" => FeatureMemberBuilder::Address(AddressBuilder {}),
-            "ad:AdminUnitName" => FeatureMemberBuilder::AdminUnitName(AdminUnitNameBuilder {}),
-            "ad:AddressAreaName" => {
-                FeatureMemberBuilder::AddressAreaName(AddressAreaNameBuilder {})
+            "ad:Address" => FeatureMemberBuilder::Address(AddressBuilder {
+                number: None,
+                number_extension: None,
+                number_2nd_extension: None,
+                postal_delivery_identifier: None,
+                admin_unit_ref: None,
+                address_area_ref: None,
+                thoroughfare_ref: None,
+                locator_designator_builder: None,
+            }),
+            "ad:AdminUnitName" => {
+                FeatureMemberBuilder::AdminUnitName(AdminUnitNameBuilder { name: None })
             }
+            "ad:AddressAreaName" => FeatureMemberBuilder::AddressAreaName(AddressAreaNameBuilder {
+                name: None,
+                situated_in_ref: None,
+            }),
             "ad:ThoroughfareName" => {
-                FeatureMemberBuilder::ThoroughfareName(ThoroughfareNameBuilder {})
+                FeatureMemberBuilder::ThoroughfareName(ThoroughfareNameBuilder {
+                    name: None,
+                    situated_in_ref: None,
+                })
             }
             _ => panic!("Unknown feature member tag: {}", tag),
         }
@@ -261,24 +208,287 @@ struct CurrentMemberBuilder {
 }
 
 impl CurrentMemberBuilder {
-    fn visit_start(&mut self, current_path: &[StrRef], e: quick_xml::events::BytesStart<'_>) {
-        todo!()
+    fn visit_start(
+        &mut self,
+        string_interner: &mut StringInterner,
+        current_path: &[StrRef],
+        e: quick_xml::events::BytesStart<'_>,
+    ) {
+        match &mut self.feature_member {
+            FeatureMemberBuilder::AdminUnitName(_) => {
+                // Don't need to check anything here
+            }
+            FeatureMemberBuilder::Address(builder) => {
+                // Check for xlink:href attributes in reference elements
+                // Extract admin_unit_ref, address_area_ref, thoroughfare_ref
+                if current_path
+                    == vec![
+                        string_interner.intern("gml:FeatureCollection"),
+                        string_interner.intern("gml:featureMember"),
+                        string_interner.intern("ad:Address"),
+                        string_interner.intern("ad:component"),
+                    ]
+                {
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"xlink:href" {
+                            let value = String::from_utf8_lossy(&attr.value);
+                            if value.starts_with("#nl-imbag-ad-adminunitname.") {
+                                builder.admin_unit_ref = Some(
+                                    value
+                                        .strip_prefix("#nl-imbag-ad-adminunitname.")
+                                        .unwrap()
+                                        .to_string(),
+                                );
+                            } else if value.starts_with("#nl-imbag-ad-addressareaname.") {
+                                builder.address_area_ref = Some(
+                                    value
+                                        .strip_prefix("#nl-imbag-ad-addressareaname.")
+                                        .unwrap()
+                                        .to_string(),
+                                );
+                            } else if value.starts_with("#nl-imbag-ad-thoroughfarename.") {
+                                builder.thoroughfare_ref = Some(
+                                    value
+                                        .strip_prefix("#nl-imbag-ad-thoroughfarename.")
+                                        .unwrap()
+                                        .to_string(),
+                                );
+                            }
+                        }
+                    }
+                }
+
+                let designator_path = vec![
+                    string_interner.intern("gml:FeatureCollection"),
+                    string_interner.intern("gml:featureMember"),
+                    string_interner.intern("ad:Address"),
+                    string_interner.intern("ad:locator"),
+                    string_interner.intern("ad:AddressLocator"),
+                    string_interner.intern("ad:designator"),
+                    string_interner.intern("ad:LocatorDesignator"),
+                    string_interner.intern("ad:type"),
+                ];
+
+                if current_path == designator_path {
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"xlink:href" {
+                            let value = String::from_utf8_lossy(&attr.value);
+                            let type_ = if value
+                                == "http://inspire.ec.europa.eu/codelist/LocatorDesignatorTypeValue/addressNumber"
+                            {
+                                Some(LocatorDesignatorType::Number)
+                            } else if value
+                                == "http://inspire.ec.europa.eu/codelist/LocatorDesignatorTypeValue/addressNumberExtension"
+                            {
+                                Some(LocatorDesignatorType::NumberExtension)
+                            } else if value
+                                == "http://inspire.ec.europa.eu/codelist/LocatorDesignatorTypeValue/addressNumber2ndExtension"
+                            {
+                                Some(LocatorDesignatorType::Number2ndExtension)
+                            } else if value
+                                == "http://inspire.ec.europa.eu/codelist/LocatorDesignatorTypeValue/postalDeliveryIdentifier"
+                            {
+                                Some(LocatorDesignatorType::PostalDeliveryIdentifier)
+                            } else {
+                                None
+                            };
+                            if let Some(type_) = type_ {
+                                if let Some(mut locator_designator) =
+                                    builder.locator_designator_builder.take()
+                                {
+                                    if let Some(designator) = locator_designator.set_type(type_) {
+                                        builder.set_designator(designator);
+                                    } else {
+                                        builder.locator_designator_builder =
+                                            Some(locator_designator);
+                                    }
+                                } else {
+                                    builder.locator_designator_builder =
+                                        Some(LocatorDesignatorBuilder::new_with_type(type_));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            FeatureMemberBuilder::AddressAreaName(builder) => {
+                let situated_in_path = vec![
+                    string_interner.intern("gml:FeatureCollection"),
+                    string_interner.intern("gml:featureMember"),
+                    string_interner.intern("ad:AddressAreaName"),
+                    string_interner.intern("ad:situatedWithin"),
+                ];
+                if current_path == situated_in_path {
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"xlink:href" {
+                            let value = String::from_utf8_lossy(&attr.value);
+                            builder.situated_in_ref = Some(
+                                value
+                                    .strip_prefix("#nl-imbag-ad-adminunitname.")
+                                    .unwrap()
+                                    .to_string(),
+                            );
+                        }
+                    }
+                }
+            }
+            FeatureMemberBuilder::ThoroughfareName(builder) => {
+                let situated_in_path = vec![
+                    string_interner.intern("gml:FeatureCollection"),
+                    string_interner.intern("gml:featureMember"),
+                    string_interner.intern("ad:ThoroughfareName"),
+                    string_interner.intern("ad:situatedWithin"),
+                ];
+                if current_path == situated_in_path {
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"xlink:href" {
+                            let value = String::from_utf8_lossy(&attr.value);
+                            builder.situated_in_ref = Some(
+                                value
+                                    .strip_prefix("#nl-imbag-ad-addressareaname-")
+                                    .unwrap()
+                                    .to_string(),
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    fn visit_end(&mut self, current_path: &[StrRef], e: quick_xml::events::BytesEnd<'_>) {
-        todo!()
+    fn visit_end(
+        &mut self,
+        _: &mut StringInterner,
+        _: &[StrRef],
+        _: quick_xml::events::BytesEnd<'_>,
+    ) {
+        // Nothing to do for end tags in this implementation
     }
 
-    fn visit_empty(&mut self, current_path: &[StrRef], e: quick_xml::events::BytesStart<'_>) {
-        todo!()
+    fn visit_empty(
+        &mut self,
+        string_interner: &mut StringInterner,
+        current_path: &[StrRef],
+        e: quick_xml::events::BytesStart<'_>,
+    ) {
+        // Handle empty tags - typically reference elements
+        self.visit_start(string_interner, current_path, e);
     }
 
-    fn visit_text(&mut self, current_path: &[StrRef], e: quick_xml::events::BytesText<'_>) {
-        todo!()
+    fn visit_text(
+        &mut self,
+        string_interner: &mut StringInterner,
+        current_path: &[StrRef],
+        e: quick_xml::events::BytesText<'_>,
+    ) {
+        // This is where you'll add specific checks for different XML paths
+        match &mut self.feature_member {
+            FeatureMemberBuilder::Address(builder) => {
+                let designator_path = vec![
+                    string_interner.intern("gml:FeatureCollection"),
+                    string_interner.intern("gml:featureMember"),
+                    string_interner.intern("ad:Address"),
+                    string_interner.intern("ad:locator"),
+                    string_interner.intern("ad:AddressLocator"),
+                    string_interner.intern("ad:designator"),
+                    string_interner.intern("ad:LocatorDesignator"),
+                    string_interner.intern("ad:designator"),
+                ];
+                if current_path == designator_path {
+                    let text = String::from_utf8(e.into_inner().into_owned()).unwrap();
+                    if let Some(mut locator_designator) = builder.locator_designator_builder.take()
+                    {
+                        if let Some(designator) = locator_designator.set_designator(text) {
+                            builder.set_designator(designator);
+                        } else {
+                            builder.locator_designator_builder = Some(locator_designator);
+                        }
+                    } else {
+                        builder.locator_designator_builder =
+                            Some(LocatorDesignatorBuilder::new_with_designator(text));
+                    }
+                }
+            }
+            FeatureMemberBuilder::AdminUnitName(builder) => {
+                let name_path = vec![
+                    string_interner.intern("gml:FeatureCollection"),
+                    string_interner.intern("gml:featureMember"),
+                    string_interner.intern("ad:AdminUnitName"),
+                    string_interner.intern("ad:name"),
+                    string_interner.intern("gn:GeographicalName"),
+                    string_interner.intern("gn:spelling"),
+                    string_interner.intern("gn:SpellingOfName"),
+                    string_interner.intern("gn:text"),
+                ];
+                if current_path == name_path && builder.name.is_none() {
+                    let text = String::from_utf8(e.into_inner().into_owned()).unwrap();
+                    builder.name = Some(text);
+                }
+            }
+            FeatureMemberBuilder::AddressAreaName(builder) => {
+                let name_path = vec![
+                    string_interner.intern("gml:FeatureCollection"),
+                    string_interner.intern("gml:featureMember"),
+                    string_interner.intern("ad:AddressAreaName"),
+                    string_interner.intern("ad:name"),
+                    string_interner.intern("gn:GeographicalName"),
+                    string_interner.intern("gn:spelling"),
+                    string_interner.intern("gn:SpellingOfName"),
+                    string_interner.intern("gn:text"),
+                ];
+                if current_path == name_path && builder.name.is_none() {
+                    let text = String::from_utf8(e.into_inner().into_owned()).unwrap();
+                    builder.name = Some(text);
+                }
+            }
+            FeatureMemberBuilder::ThoroughfareName(builder) => {
+                let name_path = vec![
+                    string_interner.intern("gml:FeatureCollection"),
+                    string_interner.intern("gml:featureMember"),
+                    string_interner.intern("ad:ThoroughfareName"),
+                    string_interner.intern("ad:name"),
+                    string_interner.intern("ad:ThoroughfareNameValue"),
+                    string_interner.intern("ad:name"),
+                    string_interner.intern("gn:GeographicalName"),
+                    string_interner.intern("gn:spelling"),
+                    string_interner.intern("gn:SpellingOfName"),
+                    string_interner.intern("gn:text"),
+                ];
+                if current_path == name_path && builder.name.is_none() {
+                    let text = String::from_utf8(e.into_inner().into_owned()).unwrap();
+                    builder.name = Some(text);
+                }
+            }
+        }
     }
 
     fn finish(self) -> FeatureMember {
-        todo!()
+        match self.feature_member {
+            FeatureMemberBuilder::Address(builder) => FeatureMember::Address {
+                local_id: self.local_id.expect("Local ID not set"),
+                number: builder.number,
+                number_extension: builder.number_extension,
+                number_2nd_extension: builder.number_2nd_extension,
+                postal_delivery_identifier: builder.postal_delivery_identifier,
+                admin_unit_ref: builder.admin_unit_ref,
+                address_area_ref: builder.address_area_ref,
+                thoroughfare_ref: builder.thoroughfare_ref,
+            },
+            FeatureMemberBuilder::AdminUnitName(builder) => FeatureMember::AdminUnitName {
+                local_id: self.local_id.expect("Local ID not set"),
+                name: builder.name,
+            },
+            FeatureMemberBuilder::AddressAreaName(builder) => FeatureMember::AddressAreaName {
+                local_id: self.local_id.expect("Local ID not set"),
+                name: builder.name,
+                situated_in_ref: builder.situated_in_ref,
+            },
+            FeatureMemberBuilder::ThoroughfareName(builder) => FeatureMember::ThoroughfareName {
+                local_id: self.local_id.expect("Local ID not set"),
+                name: builder.name,
+                situated_in_ref: builder.situated_in_ref,
+            },
+        }
     }
 }
 
@@ -294,13 +504,16 @@ static FEATURE_MEMBER_TAG: OnceLock<XmlPath> = OnceLock::new();
 fn init_feature_member_tag(interner: &mut StringInterner) -> impl FnOnce() -> XmlPath {
     move || {
         vec![
-            interner.intern("gml:featureCollection"),
+            interner.intern("gml:FeatureCollection"),
             interner.intern("gml:featureMember"),
         ]
     }
 }
 
-impl<T> AddressCollector<T> where T: FeatureMemberEmitter {
+impl<T> AddressCollector<T>
+where
+    T: FeatureMemberEmitter,
+{
     fn new(emitter: T) -> Self {
         AddressCollector {
             string_interner: gmlparser::StringInterner::default(),
@@ -319,7 +532,7 @@ impl<T> AddressCollector<T> where T: FeatureMemberEmitter {
             .intern(str::from_utf8(e.name().as_ref()).unwrap());
         self.current_path.push(name_ref);
 
-        if self.current_path == *feature_member_tag {
+        if self.current_path == *feature_member_tag || self.current_path.len() < 2 {
             assert!(self.current_member.is_none());
         } else if path_starts_with(&self.current_path, feature_member_tag)
             && self.current_path.len() == feature_member_tag.len() + 1
@@ -333,10 +546,11 @@ impl<T> AddressCollector<T> where T: FeatureMemberEmitter {
             });
         } else {
             assert!(self.current_member.is_some());
-            self.current_member
-                .as_mut()
-                .unwrap()
-                .visit_start(&self.current_path, e);
+            self.current_member.as_mut().unwrap().visit_start(
+                &mut self.string_interner,
+                &self.current_path,
+                e,
+            );
         }
     }
 
@@ -355,6 +569,7 @@ impl<T> AddressCollector<T> where T: FeatureMemberEmitter {
 
         if self.current_member.is_none() {
             assert!(self.current_path.len() <= 1);
+            self.emitter.flush();
             return;
         }
 
@@ -363,10 +578,11 @@ impl<T> AddressCollector<T> where T: FeatureMemberEmitter {
             let finished_member = current_member.finish();
             self.emitter.emit(finished_member);
         } else {
-            self.current_member
-                .as_mut()
-                .unwrap()
-                .visit_end(&self.current_path, e);
+            self.current_member.as_mut().unwrap().visit_end(
+                &mut self.string_interner,
+                &self.current_path,
+                e,
+            );
         }
     }
 
@@ -388,7 +604,7 @@ impl<T> AddressCollector<T> where T: FeatureMemberEmitter {
             return;
         }
 
-        current_member.visit_text(&self.current_path, e);
+        current_member.visit_text(&mut self.string_interner, &self.current_path, e);
     }
 
     fn visit_empty(&mut self, e: quick_xml::events::BytesStart<'_>) {
@@ -399,10 +615,11 @@ impl<T> AddressCollector<T> where T: FeatureMemberEmitter {
 
         assert!(self.current_member.is_some());
 
-        self.current_member
-            .as_mut()
-            .unwrap()
-            .visit_empty(&self.current_path, e);
+        self.current_member.as_mut().unwrap().visit_empty(
+            &mut self.string_interner,
+            &self.current_path,
+            e,
+        );
 
         self.current_path.pop();
     }

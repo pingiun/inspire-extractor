@@ -1,3 +1,35 @@
+pub mod emitter;
+
+pub enum FeatureMember {
+    Address {
+        local_id: String,
+        number: Option<String>,
+        number_extension: Option<String>,
+        number_2nd_extension: Option<String>,
+        postal_delivery_identifier: Option<String>,
+        admin_unit_ref: Option<String>,
+        address_area_ref: Option<String>,
+        thoroughfare_ref: Option<String>,
+    },
+    // Country
+    AdminUnitName {
+        local_id: String,
+        name: Option<String>,
+    },
+    // City
+    AddressAreaName {
+        local_id: String,
+        name: Option<String>,
+        situated_in_ref: Option<String>,
+    },
+    // Street
+    ThoroughfareName {
+        local_id: String,
+        name: Option<String>,
+        situated_in_ref: Option<String>,
+    },
+}
+
 type IntRef = u16;
 
 pub struct StringInterner {
