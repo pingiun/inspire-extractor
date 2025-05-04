@@ -221,13 +221,19 @@ impl CurrentMemberBuilder {
             FeatureMemberBuilder::Address(builder) => {
                 // Check for xlink:href attributes in reference elements
                 // Extract admin_unit_ref, address_area_ref, thoroughfare_ref
-                if current_path
-                    == vec![
+
+                static COMPONENT_PATH: OnceLock<XmlPath> = OnceLock::new();
+                let component_path = COMPONENT_PATH.get_or_init(|| {
+                    vec![
                         string_interner.intern("gml:FeatureCollection"),
                         string_interner.intern("gml:featureMember"),
                         string_interner.intern("ad:Address"),
                         string_interner.intern("ad:component"),
                     ]
+                });
+
+                if current_path
+                    == component_path
                 {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"xlink:href" {
@@ -258,16 +264,19 @@ impl CurrentMemberBuilder {
                     }
                 }
 
-                let designator_path = vec![
-                    string_interner.intern("gml:FeatureCollection"),
-                    string_interner.intern("gml:featureMember"),
-                    string_interner.intern("ad:Address"),
-                    string_interner.intern("ad:locator"),
-                    string_interner.intern("ad:AddressLocator"),
-                    string_interner.intern("ad:designator"),
-                    string_interner.intern("ad:LocatorDesignator"),
-                    string_interner.intern("ad:type"),
-                ];
+                static DESIGNATOR_PATH: OnceLock<XmlPath> = OnceLock::new();
+                let designator_path = DESIGNATOR_PATH.get_or_init(|| {
+                    vec![
+                        string_interner.intern("gml:FeatureCollection"),
+                        string_interner.intern("gml:featureMember"),
+                        string_interner.intern("ad:Address"),
+                        string_interner.intern("ad:locator"),
+                        string_interner.intern("ad:AddressLocator"),
+                        string_interner.intern("ad:designator"),
+                        string_interner.intern("ad:LocatorDesignator"),
+                        string_interner.intern("ad:type"),
+                    ]
+                });
 
                 if current_path == designator_path {
                     for attr in e.attributes().flatten() {
@@ -312,12 +321,15 @@ impl CurrentMemberBuilder {
                 }
             }
             FeatureMemberBuilder::AddressAreaName(builder) => {
-                let situated_in_path = vec![
-                    string_interner.intern("gml:FeatureCollection"),
-                    string_interner.intern("gml:featureMember"),
-                    string_interner.intern("ad:AddressAreaName"),
-                    string_interner.intern("ad:situatedWithin"),
-                ];
+                static SITUATED_IN_PATH: OnceLock<XmlPath> = OnceLock::new();
+                let situated_in_path = SITUATED_IN_PATH.get_or_init(|| {
+                    vec![
+                        string_interner.intern("gml:FeatureCollection"),
+                        string_interner.intern("gml:featureMember"),
+                        string_interner.intern("ad:AddressAreaName"),
+                        string_interner.intern("ad:situatedWithin"),
+                    ]
+                });
                 if current_path == situated_in_path {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"xlink:href" {
@@ -333,12 +345,15 @@ impl CurrentMemberBuilder {
                 }
             }
             FeatureMemberBuilder::ThoroughfareName(builder) => {
-                let situated_in_path = vec![
-                    string_interner.intern("gml:FeatureCollection"),
-                    string_interner.intern("gml:featureMember"),
-                    string_interner.intern("ad:ThoroughfareName"),
-                    string_interner.intern("ad:situatedWithin"),
-                ];
+                static SITUATED_IN_PATH: OnceLock<XmlPath> = OnceLock::new();
+                let situated_in_path = SITUATED_IN_PATH.get_or_init(|| {
+                    vec![
+                        string_interner.intern("gml:FeatureCollection"),
+                        string_interner.intern("gml:featureMember"),
+                        string_interner.intern("ad:ThoroughfareName"),
+                        string_interner.intern("ad:situatedWithin"),
+                    ]
+                });
                 if current_path == situated_in_path {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"xlink:href" {
@@ -384,16 +399,19 @@ impl CurrentMemberBuilder {
         // This is where you'll add specific checks for different XML paths
         match &mut self.feature_member {
             FeatureMemberBuilder::Address(builder) => {
-                let designator_path = vec![
-                    string_interner.intern("gml:FeatureCollection"),
-                    string_interner.intern("gml:featureMember"),
-                    string_interner.intern("ad:Address"),
-                    string_interner.intern("ad:locator"),
-                    string_interner.intern("ad:AddressLocator"),
-                    string_interner.intern("ad:designator"),
-                    string_interner.intern("ad:LocatorDesignator"),
-                    string_interner.intern("ad:designator"),
-                ];
+                static DESIGNATOR_PATH: OnceLock<XmlPath> = OnceLock::new();
+                let designator_path = DESIGNATOR_PATH.get_or_init(|| {
+                    vec![
+                        string_interner.intern("gml:FeatureCollection"),
+                        string_interner.intern("gml:featureMember"),
+                        string_interner.intern("ad:Address"),
+                        string_interner.intern("ad:locator"),
+                        string_interner.intern("ad:AddressLocator"),
+                        string_interner.intern("ad:designator"),
+                        string_interner.intern("ad:LocatorDesignator"),
+                        string_interner.intern("ad:designator"),
+                    ]
+                });
                 if current_path == designator_path {
                     let text = String::from_utf8(e.into_inner().into_owned()).unwrap();
                     if let Some(mut locator_designator) = builder.locator_designator_builder.take()
@@ -410,50 +428,59 @@ impl CurrentMemberBuilder {
                 }
             }
             FeatureMemberBuilder::AdminUnitName(builder) => {
-                let name_path = vec![
-                    string_interner.intern("gml:FeatureCollection"),
-                    string_interner.intern("gml:featureMember"),
-                    string_interner.intern("ad:AdminUnitName"),
-                    string_interner.intern("ad:name"),
-                    string_interner.intern("gn:GeographicalName"),
-                    string_interner.intern("gn:spelling"),
-                    string_interner.intern("gn:SpellingOfName"),
-                    string_interner.intern("gn:text"),
-                ];
+                static NAME_PATH: OnceLock<XmlPath> = OnceLock::new();
+                let name_path = NAME_PATH.get_or_init(|| {
+                    vec![
+                        string_interner.intern("gml:FeatureCollection"),
+                        string_interner.intern("gml:featureMember"),
+                        string_interner.intern("ad:AdminUnitName"),
+                        string_interner.intern("ad:name"),
+                        string_interner.intern("gn:GeographicalName"),
+                        string_interner.intern("gn:spelling"),
+                        string_interner.intern("gn:SpellingOfName"),
+                        string_interner.intern("gn:text"),
+                    ]
+                });
                 if current_path == name_path && builder.name.is_none() {
                     let text = String::from_utf8(e.into_inner().into_owned()).unwrap();
                     builder.name = Some(text);
                 }
             }
             FeatureMemberBuilder::AddressAreaName(builder) => {
-                let name_path = vec![
-                    string_interner.intern("gml:FeatureCollection"),
-                    string_interner.intern("gml:featureMember"),
-                    string_interner.intern("ad:AddressAreaName"),
-                    string_interner.intern("ad:name"),
-                    string_interner.intern("gn:GeographicalName"),
-                    string_interner.intern("gn:spelling"),
-                    string_interner.intern("gn:SpellingOfName"),
-                    string_interner.intern("gn:text"),
-                ];
+                static NAME_PATH: OnceLock<XmlPath> = OnceLock::new();
+                let name_path = NAME_PATH.get_or_init(|| {
+                    vec![
+                        string_interner.intern("gml:FeatureCollection"),
+                        string_interner.intern("gml:featureMember"),
+                        string_interner.intern("ad:AddressAreaName"),
+                        string_interner.intern("ad:name"),
+                        string_interner.intern("gn:GeographicalName"),
+                        string_interner.intern("gn:spelling"),
+                        string_interner.intern("gn:SpellingOfName"),
+                        string_interner.intern("gn:text"),
+                    ]
+                });
                 if current_path == name_path && builder.name.is_none() {
                     let text = String::from_utf8(e.into_inner().into_owned()).unwrap();
                     builder.name = Some(text);
                 }
             }
             FeatureMemberBuilder::ThoroughfareName(builder) => {
-                let name_path = vec![
-                    string_interner.intern("gml:FeatureCollection"),
-                    string_interner.intern("gml:featureMember"),
-                    string_interner.intern("ad:ThoroughfareName"),
-                    string_interner.intern("ad:name"),
-                    string_interner.intern("ad:ThoroughfareNameValue"),
-                    string_interner.intern("ad:name"),
-                    string_interner.intern("gn:GeographicalName"),
-                    string_interner.intern("gn:spelling"),
-                    string_interner.intern("gn:SpellingOfName"),
-                    string_interner.intern("gn:text"),
-                ];
+                static NAME_PATH: OnceLock<XmlPath> = OnceLock::new();
+                let name_path = NAME_PATH.get_or_init(|| {
+                    vec![
+                        string_interner.intern("gml:FeatureCollection"),
+                        string_interner.intern("gml:featureMember"),
+                        string_interner.intern("ad:ThoroughfareName"),
+                        string_interner.intern("ad:name"),
+                        string_interner.intern("ad:ThoroughfareNameValue"),
+                        string_interner.intern("ad:name"),
+                        string_interner.intern("gn:GeographicalName"),
+                        string_interner.intern("gn:spelling"),
+                        string_interner.intern("gn:SpellingOfName"),
+                        string_interner.intern("gn:text"),
+                    ]
+                });
                 if current_path == name_path && builder.name.is_none() {
                     let text = String::from_utf8(e.into_inner().into_owned()).unwrap();
                     builder.name = Some(text);
@@ -499,9 +526,9 @@ struct AddressCollector<T> {
     emitter: T,
 }
 
-static FEATURE_MEMBER_TAG: OnceLock<XmlPath> = OnceLock::new();
+static FEATURE_MEMBER_PREFIX: OnceLock<XmlPath> = OnceLock::new();
 
-fn init_feature_member_tag(interner: &mut StringInterner) -> impl FnOnce() -> XmlPath {
+fn init_feature_member_prefix(interner: &mut StringInterner) -> impl FnOnce() -> XmlPath {
     move || {
         vec![
             interner.intern("gml:FeatureCollection"),
@@ -525,7 +552,7 @@ where
 
     fn visit_start(&mut self, e: quick_xml::events::BytesStart) {
         let feature_member_tag =
-            FEATURE_MEMBER_TAG.get_or_init(init_feature_member_tag(&mut self.string_interner));
+            FEATURE_MEMBER_PREFIX.get_or_init(init_feature_member_prefix(&mut self.string_interner));
 
         let name_ref = self
             .string_interner
@@ -556,7 +583,7 @@ where
 
     fn visit_end(&mut self, e: quick_xml::events::BytesEnd) {
         let feature_member_tag =
-            FEATURE_MEMBER_TAG.get_or_init(init_feature_member_tag(&mut self.string_interner));
+            FEATURE_MEMBER_PREFIX.get_or_init(init_feature_member_prefix(&mut self.string_interner));
 
         let name_ref = self
             .string_interner
