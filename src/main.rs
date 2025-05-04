@@ -5,6 +5,7 @@ use gmlparser::{
     FeatureMember, StrRef, StringInterner,
     emitter::{
         ChooseEmitter, FeatureMemberEmitter, multifile::MultiFileEmitter, null::NullEmitter,
+        sqlite::SqliteEmitter,
     },
 };
 use quick_xml::events::Event;
@@ -26,6 +27,21 @@ fn main() {
         // Create a TSV file emitter
         let tsv_file_path = PathBuf::from(file_path);
         MultiFileEmitter::new(tsv_file_path.parent().unwrap()).into()
+    } else if format == "sqlite" {
+        // Create a SQLite file emitter
+        let sqlite_file_path = PathBuf::from(file_path);
+        let sqlite_emitter = SqliteEmitter::new(
+            sqlite_file_path
+                .parent()
+                .expect("unable to get parent path")
+                .join("nl-addresses.sqlite")
+                .as_path(),
+        )
+        .expect("unable to open sqlite file");
+        sqlite_emitter
+            .create_tables()
+            .expect("unable to create tables");
+        sqlite_emitter.into()
     } else {
         NullEmitter::new().into()
     };
@@ -53,6 +69,7 @@ fn main() {
             _ => {}
         }
     }
+    collector.end();
 }
 
 type XmlPath = Vec<StrRef>;
@@ -232,9 +249,7 @@ impl CurrentMemberBuilder {
                     ]
                 });
 
-                if current_path
-                    == component_path
-                {
+                if current_path == component_path {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"xlink:href" {
                             let value = String::from_utf8_lossy(&attr.value);
@@ -541,7 +556,8 @@ impl<T> AddressCollector<T>
 where
     T: FeatureMemberEmitter,
 {
-    fn new(emitter: T) -> Self {
+    fn new(mut emitter: T) -> Self {
+        emitter.start();
         AddressCollector {
             string_interner: gmlparser::StringInterner::default(),
             current_path: Vec::new(),
@@ -551,8 +567,8 @@ where
     }
 
     fn visit_start(&mut self, e: quick_xml::events::BytesStart) {
-        let feature_member_tag =
-            FEATURE_MEMBER_PREFIX.get_or_init(init_feature_member_prefix(&mut self.string_interner));
+        let feature_member_tag = FEATURE_MEMBER_PREFIX
+            .get_or_init(init_feature_member_prefix(&mut self.string_interner));
 
         let name_ref = self
             .string_interner
@@ -582,8 +598,8 @@ where
     }
 
     fn visit_end(&mut self, e: quick_xml::events::BytesEnd) {
-        let feature_member_tag =
-            FEATURE_MEMBER_PREFIX.get_or_init(init_feature_member_prefix(&mut self.string_interner));
+        let feature_member_tag = FEATURE_MEMBER_PREFIX
+            .get_or_init(init_feature_member_prefix(&mut self.string_interner));
 
         let name_ref = self
             .string_interner
@@ -596,7 +612,6 @@ where
 
         if self.current_member.is_none() {
             assert!(self.current_path.len() <= 1);
-            self.emitter.flush();
             return;
         }
 
@@ -649,5 +664,9 @@ where
         );
 
         self.current_path.pop();
+    }
+
+    fn end(mut self) {
+        self.emitter.end();
     }
 }

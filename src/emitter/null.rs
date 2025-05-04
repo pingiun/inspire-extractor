@@ -20,7 +20,11 @@ impl FeatureMemberEmitter for NullEmitter {
         // No operation
     }
 
-    fn flush(&mut self) {
+    fn start(&mut self) {
+        // No operation
+    }
+
+    fn end(&mut self) {
         // No operation
     }
 }

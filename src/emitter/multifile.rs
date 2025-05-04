@@ -24,35 +24,11 @@ impl MultiFileEmitter {
         let thoroughfare_file = std::fs::File::create(base_path.join("thoroughfares.tsv"))
             .expect("Failed to create thoroughfare file");
 
-        // Write headers to each file
-        let mut address_writer = std::io::BufWriter::new(address_file);
-        writeln!(
-            address_writer,
-            "local_id\tnumber\tnumber_extension\tnumber_2nd_extension\tpostal_delivery_identifier\tunit_level\tadmin_unit_ref\taddress_area_ref\tthoroughfare_ref"
-        ).expect("Failed to write address header");
-        address_writer
-            .flush()
-            .expect("Failed to flush address writer");
-
-        let mut admin_unit_writer = std::io::BufWriter::new(admin_unit_file);
-        writeln!(admin_unit_writer, "local_id\tname").expect("Failed to write admin unit header");
-        admin_unit_writer
-            .flush()
-            .expect("Failed to flush admin unit writer");
-
-        let mut address_area_writer = std::io::BufWriter::new(address_area_file);
-        writeln!(address_area_writer, "local_id\tname\tsituated_in_ref")
-            .expect("Failed to write address area header");
-        address_area_writer
-            .flush()
-            .expect("Failed to flush address area writer");
-
-        let mut thoroughfare_writer = std::io::BufWriter::new(thoroughfare_file);
-        writeln!(thoroughfare_writer, "local_id\tname\tsituated_in_ref")
-            .expect("Failed to write thoroughfare header");
-        thoroughfare_writer
-            .flush()
-            .expect("Failed to flush thoroughfare writer");
+        // Create buffered writers for each file
+        let address_writer = std::io::BufWriter::new(address_file);
+        let admin_unit_writer = std::io::BufWriter::new(admin_unit_file);
+        let address_area_writer = std::io::BufWriter::new(address_area_file);
+        let thoroughfare_writer = std::io::BufWriter::new(thoroughfare_file);
 
         MultiFileEmitter {
             address_writer,
@@ -134,7 +110,35 @@ impl FeatureMemberEmitter for MultiFileEmitter {
         }
     }
 
-    fn flush(&mut self) {
+    fn start(&mut self) {
+        // Write headers to each file
+        writeln!(
+            self.address_writer,
+            "local_id\tnumber\tnumber_extension\tnumber_2nd_extension\tpostal_delivery_identifier\tunit_level\tadmin_unit_ref\taddress_area_ref\tthoroughfare_ref"
+        ).expect("Failed to write address header");
+        self.address_writer
+            .flush()
+            .expect("Failed to flush address writer");
+
+        writeln!(self.admin_unit_writer, "local_id\tname").expect("Failed to write admin unit header");
+        self.admin_unit_writer
+            .flush()
+            .expect("Failed to flush admin unit writer");
+
+        writeln!(self.address_area_writer, "local_id\tname\tsituated_in_ref")
+            .expect("Failed to write address area header");
+        self.address_area_writer
+            .flush()
+            .expect("Failed to flush address area writer");
+
+        writeln!(self.thoroughfare_writer, "local_id\tname\tsituated_in_ref")
+            .expect("Failed to write thoroughfare header");
+        self.thoroughfare_writer
+            .flush()
+            .expect("Failed to flush thoroughfare writer");
+    }
+
+    fn end(&mut self) {
         self.address_writer
             .flush()
             .expect("Failed to flush address writer");
