@@ -114,7 +114,7 @@ impl FeatureMemberEmitter for MultiFileEmitter {
         // Write headers to each file
         writeln!(
             self.address_writer,
-            "local_id\tnumber\tnumber_extension\tnumber_2nd_extension\tpostal_delivery_identifier\tunit_level\tadmin_unit_ref\taddress_area_ref\tthoroughfare_ref"
+            "local_id\tnumber\tnumber_extension\tnumber_2nd_extension\tpostal_delivery_identifier\tadmin_unit_ref\taddress_area_ref\tthoroughfare_ref"
         ).expect("Failed to write address header");
         self.address_writer
             .flush()

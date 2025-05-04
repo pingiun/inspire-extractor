@@ -29,7 +29,6 @@ impl SqliteEmitter {
                 number_extension TEXT,
                 number_2nd_extension TEXT,
                 postal_delivery_identifier TEXT,
-                unit_level TEXT,
                 admin_unit_ref TEXT,
                 address_area_ref TEXT,
                 thoroughfare_ref TEXT
@@ -129,6 +128,18 @@ impl FeatureMemberEmitter for SqliteEmitter {
     }
 
     fn start(&mut self) {
+        // Truncate tables
+        self.db
+            .execute("DELETE FROM addresses", [])
+            .expect("Failed to truncate addresses table");
+        self.db
+            .execute("DELETE FROM admin_units", [])
+            .expect("Failed to truncate admin units table");
+        self.db
+            .execute("DELETE FROM address_areas", [])
+            .expect("Failed to truncate address areas table");
+        self.db.execute("DELETE FROM thoroughfares", [])
+            .expect("Failed to truncate thoroughfares table");
         self.db
             .execute("BEGIN TRANSACTION", [])
             .expect("Failed to begin transaction");

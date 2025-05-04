@@ -42,8 +42,12 @@ fn main() {
             .create_tables()
             .expect("unable to create tables");
         sqlite_emitter.into()
+    } else if format == "null" {
+        // Create a null emitter
+        NullEmitter.into()
     } else {
-        NullEmitter::new().into()
+        eprintln!("Unknown format: {}", format);
+        return;
     };
 
     let mut collector = AddressCollector::new(emitter);
@@ -112,15 +116,15 @@ struct AddressBuilder {
 impl AddressBuilder {
     fn set_designator(&mut self, designator: LocatorDesignator) {
         match designator.type_ {
-            LocatorDesignatorType::Number => self.number = Some(designator.designator),
+            LocatorDesignatorType::Number => self.number = designator.designator,
             LocatorDesignatorType::NumberExtension => {
-                self.number_extension = Some(designator.designator)
+                self.number_extension = designator.designator
             }
             LocatorDesignatorType::Number2ndExtension => {
-                self.number_2nd_extension = Some(designator.designator)
+                self.number_2nd_extension = designator.designator
             }
             LocatorDesignatorType::PostalDeliveryIdentifier => {
-                self.postal_delivery_identifier = Some(designator.designator)
+                self.postal_delivery_identifier = designator.designator
             }
         }
     }
@@ -128,12 +132,12 @@ impl AddressBuilder {
 
 struct LocatorDesignatorBuilder {
     type_: Option<LocatorDesignatorType>,
-    designator: Option<String>,
+    designator: Option<Option<String>>,
 }
 
 struct LocatorDesignator {
     type_: LocatorDesignatorType,
-    designator: String,
+    designator: Option<String>,
 }
 
 impl LocatorDesignatorBuilder {
@@ -143,10 +147,18 @@ impl LocatorDesignatorBuilder {
             designator: None,
         }
     }
+
     fn new_with_designator(designator: String) -> LocatorDesignatorBuilder {
         LocatorDesignatorBuilder {
             type_: None,
-            designator: Some(designator),
+            designator: Some(Some(designator)),
+        }
+    }
+
+    fn new_with_none_designator() -> LocatorDesignatorBuilder {
+        LocatorDesignatorBuilder {
+            type_: None,
+            designator: Some(None),
         }
     }
 
@@ -160,9 +172,21 @@ impl LocatorDesignatorBuilder {
 
     fn set_designator(&mut self, designator: String) -> Option<LocatorDesignator> {
         if let Some(type_) = self.type_.take() {
-            return Some(LocatorDesignator { type_, designator });
+            return Some(LocatorDesignator { type_, designator: Some(designator) });
         }
-        self.designator = Some(designator);
+        self.designator = Some(Some(designator));
+        None
+
+    }
+
+    fn set_designator_none(&mut self) -> Option<LocatorDesignator> {
+        if let Some(type_) = self.type_.take() {
+            return Some(LocatorDesignator {
+                type_,
+                designator: None,
+            });
+        }
+        self.designator = Some(None);
         None
     }
 }
@@ -401,6 +425,29 @@ impl CurrentMemberBuilder {
         current_path: &[StrRef],
         e: quick_xml::events::BytesStart<'_>,
     ) {
+        match &mut self.feature_member {
+            FeatureMemberBuilder::Address(builder) => {
+                // Special handling for some empty tags
+                let designator_path =
+                    DESIGNATOR_PATH.get_or_init(init_designator_path(string_interner));
+                if current_path == designator_path {
+                    // Null designator
+                    if let Some(mut locator_designator) = builder.locator_designator_builder.take()
+                    {
+                        if let Some(designator) = locator_designator.set_designator_none() {
+                            builder.set_designator(designator);
+                        } else {
+                            builder.locator_designator_builder = Some(locator_designator);
+                        }
+                    } else {
+                        builder.locator_designator_builder =
+                            Some(LocatorDesignatorBuilder::new_with_none_designator());
+                    }
+                }
+            }
+            _ => {}
+        }
+
         // Handle empty tags - typically reference elements
         self.visit_start(string_interner, current_path, e);
     }
@@ -414,19 +461,8 @@ impl CurrentMemberBuilder {
         // This is where you'll add specific checks for different XML paths
         match &mut self.feature_member {
             FeatureMemberBuilder::Address(builder) => {
-                static DESIGNATOR_PATH: OnceLock<XmlPath> = OnceLock::new();
-                let designator_path = DESIGNATOR_PATH.get_or_init(|| {
-                    vec![
-                        string_interner.intern("gml:FeatureCollection"),
-                        string_interner.intern("gml:featureMember"),
-                        string_interner.intern("ad:Address"),
-                        string_interner.intern("ad:locator"),
-                        string_interner.intern("ad:AddressLocator"),
-                        string_interner.intern("ad:designator"),
-                        string_interner.intern("ad:LocatorDesignator"),
-                        string_interner.intern("ad:designator"),
-                    ]
-                });
+                let designator_path =
+                    DESIGNATOR_PATH.get_or_init(init_designator_path(string_interner));
                 if current_path == designator_path {
                     let text = String::from_utf8(e.into_inner().into_owned()).unwrap();
                     if let Some(mut locator_designator) = builder.locator_designator_builder.take()
@@ -548,6 +584,23 @@ fn init_feature_member_prefix(interner: &mut StringInterner) -> impl FnOnce() ->
         vec![
             interner.intern("gml:FeatureCollection"),
             interner.intern("gml:featureMember"),
+        ]
+    }
+}
+
+static DESIGNATOR_PATH: OnceLock<XmlPath> = OnceLock::new();
+
+fn init_designator_path(interner: &mut StringInterner) -> impl FnOnce() -> XmlPath {
+    move || {
+        vec![
+            interner.intern("gml:FeatureCollection"),
+            interner.intern("gml:featureMember"),
+            interner.intern("ad:Address"),
+            interner.intern("ad:locator"),
+            interner.intern("ad:AddressLocator"),
+            interner.intern("ad:designator"),
+            interner.intern("ad:LocatorDesignator"),
+            interner.intern("ad:designator"),
         ]
     }
 }
